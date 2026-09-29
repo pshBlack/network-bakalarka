@@ -1,0 +1,154 @@
+version: "3.8"
+
+# Monitoring stack for a small SMB network:
+#
+#  LOGS  : syslog-ng -> promtail -> Loki -> Grafana
+#  METRICS: snmp-exporter (network devices) + node-exporter (host) +
+#           cadvisor (per-container) -> Prometheus -> Grafana
+#
+# Target platform: Raspberry Pi 4 (4/8GB) or SFF PC, arm64/amd64
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  loki-data:
+  grafana-data:
+  syslog-data:
+  prometheus-data:
+
+services:
+
+  # ============================= LOGS =====================================
+
+  syslog-ng:
+    image: balabit/syslog-ng:4.8.0
+    container_name: syslog-ng
+    restart: unless-stopped
+    ports:
+      - "514:514/udp"   # standard syslog UDP (MikroTik, Cisco default)
+      - "601:601/tcp"   # RFC 5424 TCP (Fortinet, reliable delivery)
+      - "6514:6514/tcp" # optional: TLS syslog
+    volumes:
+      - ./syslog-ng/syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf:ro
+      - syslog-data:/var/log/network
+    networks:
+      - monitoring
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - syslog-data:/var/log/network:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - monitoring
+    depends_on:
+      - syslog-ng
+      - loki
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitoring
+
+  # ============================ METRICS ====================================
+
+  snmp-exporter:
+    # Polls network devices (MikroTik/FortiGate/Cisco) over SNMP and
+    # exposes the results in Prometheus format.
+    image: prom/snmp-exporter:v0.26.0
+    container_name: snmp-exporter
+    restart: unless-stopped
+    ports:
+      - "9116:9116"
+    volumes:
+      - ./snmp-exporter/snmp.yml:/etc/snmp_exporter/snmp.yml:ro
+    networks:
+      - monitoring
+
+  node-exporter:
+    # Host-level metrics of the RPi4/SFF itself: CPU, RAM, disk, network.
+    # Needed for the "výkon a zdrojová náročnosť" chapter.
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    network_mode: host       # simplest way to expose real host metrics
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+
+  cadvisor:
+    # Per-container resource usage: how much CPU/RAM each of your
+    # Loki/Grafana/syslog-ng containers actually consumes.
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    networks:
+      - monitoring
+    depends_on:
+      - snmp-exporter
+      - cadvisor
+
+  # ============================ DASHBOARDS =================================
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=change_me   # change before deployment!
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+    depends_on:
+      - loki
+      - prometheus

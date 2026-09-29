@@ -1,0 +1,30 @@
+# Minimal example snmp.yml for snmp_exporter.
+# In practice, generate this properly with the official generator:
+#   https://github.com/prometheus/snmp_exporter/tree/main/generator
+# using vendor MIBs (MIKROTIK-MIB, FORTINET-FORTIGATE-MIB) for richer metrics.
+# This file gives a *working baseline* using standard MIB-II / IF-MIB
+# OIDs that every vendor supports, so you get interface + basic health
+# metrics even before adding vendor-specific MIBs.
+
+mikrotik:
+  walk:
+    - 1.3.6.1.2.1.1        # sysDescr, sysUptime...
+    - 1.3.6.1.2.1.2.2      # ifTable (interfaces: status, in/out octets)
+    - 1.3.6.1.4.1.14988.1.1.3 # MikroTik enterprise MIB (health: CPU, voltage, temp)
+  auth:
+    community: public       # change to your real SNMP community!
+
+fortinet:
+  walk:
+    - 1.3.6.1.2.1.1
+    - 1.3.6.1.2.1.2.2
+    - 1.3.6.1.4.1.12356.101.4  # FORTINET-FORTIGATE-MIB: fgSystem (CPU, mem, sessions)
+  auth:
+    community: public
+
+if_mib:
+  walk:
+    - 1.3.6.1.2.1.1
+    - 1.3.6.1.2.1.2.2
+  auth:
+    community: public

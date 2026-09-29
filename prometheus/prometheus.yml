@@ -1,0 +1,63 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+
+  # --- Host resource metrics (RPi4 / SFF itself) ---
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # --- Docker container resource metrics (per-container CPU/RAM/net) ---
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # --- Network devices via SNMP exporter ---
+  # snmp_exporter itself is the "proxy": Prometheus scrapes snmp_exporter,
+  # snmp_exporter then polls the real device over SNMP.
+  - job_name: "snmp_mikrotik"
+    static_configs:
+      - targets:
+          - 192.168.1.1     # <-- replace with real MikroTik mgmt IP
+    metrics_path: /snmp
+    params:
+      module: [mikrotik]   # module name defined in snmp.yml
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  - job_name: "snmp_fortinet"
+    static_configs:
+      - targets:
+          - 192.168.1.99    # <-- replace with real FortiGate mgmt IP
+    metrics_path: /snmp
+    params:
+      module: [fortinet]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  - job_name: "snmp_cisco"
+    static_configs:
+      - targets:
+          - 192.168.1.254   # <-- replace with real Cisco mgmt IP
+    metrics_path: /snmp
+    params:
+      module: [if_mib]      # generic interface MIB, works for most Cisco IOS
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116

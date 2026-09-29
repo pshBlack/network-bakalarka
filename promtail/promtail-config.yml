@@ -1,0 +1,67 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+
+  - job_name: mikrotik
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: syslog
+          vendor: mikrotik
+          __path__: /var/log/network/mikrotik.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\S+) (?P<host>\S+) (?P<message>.*)$'
+      - labels:
+          host:
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+
+  - job_name: fortinet
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: syslog
+          vendor: fortinet
+          __path__: /var/log/network/fortinet.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\S+) (?P<host>\S+) (?P<message>.*)$'
+      - labels:
+          host:
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+
+  - job_name: cisco
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: syslog
+          vendor: cisco
+          __path__: /var/log/network/cisco.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\S+) (?P<host>\S+) (?P<message>.*)$'
+      - labels:
+          host:
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+
+  - job_name: unknown
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: syslog
+          vendor: unknown
+          __path__: /var/log/network/unknown.log
